@@ -56,13 +56,25 @@ function countByField(rows, fieldIndex, fallback = "Unspecified") {
 function countByDayLast30(rows, timestampIndex) {
   const cutoff = daysAgoISO(30);
   const counts = {};
+
   for (const row of rows) {
     const raw = row[timestampIndex];
     if (!raw) continue;
-    const day = new Date(raw).toISOString().slice(0, 10);
+
+    const parsedDate = new Date(raw);
+
+    // Skip rows where the date is invalid or unparseable
+    if (isNaN(parsedDate.getTime())) {
+      console.warn(`Skipping invalid date value: "${raw}"`);
+      continue;
+    }
+
+    const day = parsedDate.toISOString().slice(0, 10);
     if (day < cutoff) continue;
+
     counts[day] = (counts[day] || 0) + 1;
   }
+
   return Object.entries(counts)
     .map(([day, n]) => ({ day, n }))
     .sort((a, b) => (a.day > b.day ? 1 : -1));
