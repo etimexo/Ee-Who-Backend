@@ -1,3 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ee'who Internal Operations Portal</title>
+<style>
+  :root {
+    --brand: #0f766e;
+    --bg: #f8fafc;
+    --card-bg: #ffffff;
+    --text: #0f172a;
+    --muted: #64748b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    background: var(--brand);
+    color: white;
+    padding: 20px 32px;
+  }
+  main {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 24px 16px 60px;
+  }
+  .card {
+    background: var(--card-bg);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 24px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  }
+  h2 { font-size: 16px; margin: 0 0 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 10px; border-bottom: 1px solid #edf2f7; }
+  th { background: #f1f5f9; color: var(--muted); font-weight: 600; }
+  .badge {
+    background: #e6fffa;
+    color: #234e52;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  #statusMessage {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1 style="margin: 0; font-size: 20px;">Ee'who Staff Operations &amp; Dispatch</h1>
+  <p style="margin: 4px 0 0; opacity: 0.85; font-size: 13px;">Internal volunteer and donor pipeline</p>
+</header>
+
+<main>
+  <div id="statusMessage">Connecting to backend...</div>
+
+  <div class="card">
+    <h2>Recent Volunteer Registrations</h2>
+    <table>
+      <thead>
+        <tr><th>Name</th><th>Email</th><th>Focus Area</th><th>Received</th></tr>
+      </thead>
+      <tbody id="volunteersTable"><tr><td colspan="4">Loading...</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Recent Donor Inquiries &amp; Pledges</h2>
+    <table>
+      <thead>
+        <tr><th>Name</th><th>Email</th><th>Category</th><th>Amount</th><th>Date</th></tr>
+      </thead>
+      <tbody id="donorsTable"><tr><td colspan="5">Loading...</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Community Feedback Submissions</h2>
+    <table>
+      <thead>
+        <tr><th>Name</th><th>Email</th><th>Message</th><th>Date</th></tr>
+      </thead>
+      <tbody id="feedbackTable"><tr><td colspan="4">Loading...</td></tr></tbody>
+    </table>
+  </div>
+</main>
+
 <script>
 function formatDate(d) {
   if (!d) return "—";
@@ -6,46 +105,66 @@ function formatDate(d) {
 }
 
 async function loadAdminData() {
+  const statusEl = document.getElementById("statusMessage");
   try {
     const res = await fetch("/api/admin/stats");
+    if (!res.ok) {
+      statusEl.textContent = `Server responded with status ${res.status} (${res.statusText})`;
+      return;
+    }
+
     const data = await res.json();
-    if (!data.success) return;
+    if (!data.success) {
+      statusEl.textContent = "Error: " + (data.error || "Unable to fetch records");
+      return;
+    }
+
+    statusEl.textContent = "Live data synced at " + new Date().toLocaleTimeString();
 
     // Volunteers Table
-    document.getElementById("volunteersTable").innerHTML = data.recent_volunteers.map(r => `
-      <tr>
-        <td><strong>${r.name}</strong></td>
-        <td>${r.email || "—"}</td>
-        <td><span class="badge">${r.interest_area}</span></td>
-        <td>${formatDate(r.created_at)}</td>
-      </tr>
-    `).join("") || "<tr><td colspan='4'>No records found.</td></tr>";
+    document.getElementById("volunteersTable").innerHTML = (data.recent_volunteers && data.recent_volunteers.length)
+      ? data.recent_volunteers.map(r => `
+          <tr>
+            <td><strong>${r.name || "—"}</strong></td>
+            <td>${r.email || "—"}</td>
+            <td><span class="badge">${r.interest_area || "General"}</span></td>
+            <td>${formatDate(r.created_at)}</td>
+          </tr>
+        `).join("")
+      : "<tr><td colspan='4'>No records found.</td></tr>";
 
     // Donor Inquiries Table
-    document.getElementById("donorsTable").innerHTML = data.recent_donor_inquiries.map(r => `
-      <tr>
-        <td><strong>${r.name}</strong></td>
-        <td>${r.email || "—"}</td>
-        <td>${r.category}</td>
-        <td><strong>${r.currency} ${r.amount}</strong></td>
-        <td>${formatDate(r.created_at)}</td>
-      </tr>
-    `).join("") || "<tr><td colspan='5'>No records found.</td></tr>";
+    document.getElementById("donorsTable").innerHTML = (data.recent_donor_inquiries && data.recent_donor_inquiries.length)
+      ? data.recent_donor_inquiries.map(r => `
+          <tr>
+            <td><strong>${r.name || "—"}</strong></td>
+            <td>${r.email || "—"}</td>
+            <td>${r.category || "—"}</td>
+            <td><strong>${(r.currency + " " + r.amount).trim() || "—"}</strong></td>
+            <td>${formatDate(r.created_at)}</td>
+          </tr>
+        `).join("")
+      : "<tr><td colspan='5'>No records found.</td></tr>";
 
     // Feedback Table
-    document.getElementById("feedbackTable").innerHTML = data.recent_feedback.map(r => `
-      <tr>
-        <td><strong>${r.name}</strong></td>
-        <td>${r.email || "—"}</td>
-        <td><em>${r.message}</em></td>
-        <td>${formatDate(r.created_at)}</td>
-      </tr>
-    `).join("") || "<tr><td colspan='4'>No records found.</td></tr>";
+    document.getElementById("feedbackTable").innerHTML = (data.recent_feedback && data.recent_feedback.length)
+      ? data.recent_feedback.map(r => `
+          <tr>
+            <td><strong>${r.name || "—"}</strong></td>
+            <td>${r.email || "—"}</td>
+            <td><em>${r.message || "—"}</em></td>
+            <td>${formatDate(r.created_at)}</td>
+          </tr>
+        `).join("")
+      : "<tr><td colspan='4'>No records found.</td></tr>";
+
   } catch (err) {
-    console.error("Error loading admin data:", err);
+    statusEl.textContent = "Client connection error: " + err.message;
   }
 }
 
 loadAdminData();
 setInterval(loadAdminData, 30000);
 </script>
+</body>
+</html>
