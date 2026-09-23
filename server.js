@@ -1,6 +1,7 @@
 // server.js
 const express = require("express");
 const path = require("path");
+const fs = require("fs");
 const cors = require("cors");
 const { getPublicStats, getAdminStats } = require("./sheets");
 
@@ -9,20 +10,21 @@ const PORT = process.env.PORT || 10000;
 
 app.use(cors());
 
-// Allow iframe embedding across domains
+// Configure iframe permissions so ethanaeworld.org can embed the widget
 app.use((req, res, next) => {
   res.removeHeader("X-Frame-Options");
   res.setHeader(
     "Content-Security-Policy",
-    "frame-ancestors 'self' https://www.ethanaeworld.org https://ethanaeworld.org"
+    "frame-ancestors 'self' https://www.ethanaeworld.org https://ethanaeworld.org http://localhost:* http://127.0.0.1:*"
   );
   next();
 });
 
-// Serve static frontend assets
+// Serve static assets from both root and /public folders
+app.use(express.static(path.join(__dirname)));
 app.use(express.static(path.join(__dirname, "public")));
 
-// Basic Authentication Middleware for Admin routes
+// Basic Authentication Middleware for Admin portal & Admin API
 function requireAdminAuth(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader) {
@@ -31,6 +33,11 @@ function requireAdminAuth(req, res, next) {
   }
 
   const encoded = authHeader.split(" ")[1];
+  if (!encoded) {
+    res.setHeader("WWW-Authenticate", 'Basic realm="Ee\'who Admin Portal"');
+    return res.status(401).send("Authentication required.");
+  }
+
   const decoded = Buffer.from(encoded, "base64").toString("utf-8");
   const [username, password] = decoded.split(":");
 
@@ -45,7 +52,11 @@ function requireAdminAuth(req, res, next) {
   return res.status(401).send("Invalid credentials.");
 }
 
-// PUBLIC ENDPOINTS
+// ---------------------------------------------------------------------
+// API ROUTES
+// ---------------------------------------------------------------------
+
+// 1. Public API (Used by dashboard.html / widget)
 app.get("/api/stats", async (req, res) => {
   try {
     const stats = await getPublicStats();
@@ -56,28 +67,55 @@ app.get("/api/stats", async (req, res) => {
   }
 });
 
-// ADMIN ENDPOINTS (Protected)
-const fs = require("fs"); // Make sure this is at the top of server.js if it isn't already
+// 2. Admin API (Used by admin.html)
+app.get("/api/admin/stats", requireAdminAuth, async (req, res) => {
+  try {
+    const stats = await getAdminStats();
+    res.json({ success: true, ...stats });
+  } catch (err) {
+    console.error("Admin stats error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
-app.get("/admin", requireAdminAuth, (req, res) => {
-  // Check if admin.html is in the root folder or inside a /public folder
-  const rootPath = path.join(__dirname, "admin.html");
-  const publicPath = path.join(__dirname, "public", "admin.html");
+// ---------------------------------------------------------------------
+// HTML PAGE ROUTES
+// ---------------------------------------------------------------------
+
+// Helper function to serve HTML file whether it sits in root or /public
+function sendSafeFile(res, fileName) {
+  const rootPath = path.join(__dirname, fileName);
+  const publicPath = path.join(__dirname, "public", fileName);
 
   if (fs.existsSync(rootPath)) {
     return res.sendFile(rootPath);
   } else if (fs.existsSync(publicPath)) {
     return res.sendFile(publicPath);
   } else {
-    // If neither exists, this message will display on screen instead of a blank white page
-    res.status(404).send("File error: admin.html was not found in your repository root or public folder.");
+    return res.status(404).send(`File not found: ${fileName}`);
   }
-});
+}
 
+// Admin portal page
 app.get("/admin", requireAdminAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "admin.html"));
+  sendSafeFile(res, "admin.html");
 });
 
+// Public dashboard page
+app.get("/dashboard", (req, res) => {
+  sendSafeFile(res, "dashboard.html");
+});
+
+app.get("/dashboard.html", (req, res) => {
+  sendSafeFile(res, "dashboard.html");
+});
+
+// Root default route
+app.get("/", (req, res) => {
+  sendSafeFile(res, "dashboard.html");
+});
+
+// Start server
 app.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
 });
