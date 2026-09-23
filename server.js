@@ -1,31 +1,76 @@
 // server.js
-require("dotenv").config();
 const express = require("express");
-const cors = require("cors");
 const path = require("path");
-
-const statsRoutes = require("./routes/stats");
+const cors = require("cors");
+const { getPublicStats, getAdminStats } = require("./sheets");
 
 const app = express();
-app.use(cors());
-app.use(express.json());
+const PORT = process.env.PORT || 10000;
 
+app.use(cors());
+
+// Allow iframe embedding across domains
 app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} ${req.method} ${req.path}`);
+  res.removeHeader("X-Frame-Options");
+  res.setHeader(
+    "Content-Security-Policy",
+    "frame-ancestors 'self' https://www.ethanaeworld.org https://ethanaeworld.org"
+  );
   next();
 });
 
-// Serves public/dashboard.html and public/embed-widget.js
+// Serve static frontend assets
 app.use(express.static(path.join(__dirname, "public")));
 
-app.get("/api/health", (req, res) => {
-  res.json({ success: true, status: "ok", time: new Date().toISOString() });
+// Basic Authentication Middleware for Admin routes
+function requireAdminAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    res.setHeader("WWW-Authenticate", 'Basic realm="Ee\'who Admin Portal"');
+    return res.status(401).send("Authentication required.");
+  }
+
+  const encoded = authHeader.split(" ")[1];
+  const decoded = Buffer.from(encoded, "base64").toString("utf-8");
+  const [username, password] = decoded.split(":");
+
+  const adminUser = process.env.ADMIN_USER || "admin";
+  const adminPass = process.env.ADMIN_PASSWORD || "EthanaImpact2026";
+
+  if (username === adminUser && password === adminPass) {
+    return next();
+  }
+
+  res.setHeader("WWW-Authenticate", 'Basic realm="Ee\'who Admin Portal"');
+  return res.status(401).send("Invalid credentials.");
+}
+
+// PUBLIC ENDPOINTS
+app.get("/api/stats", async (req, res) => {
+  try {
+    const stats = await getPublicStats();
+    res.json({ success: true, ...stats });
+  } catch (err) {
+    console.error("Public stats error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
-app.use("/api/stats", statsRoutes);
+// ADMIN ENDPOINTS (Protected)
+app.get("/api/admin/stats", requireAdminAuth, async (req, res) => {
+  try {
+    const stats = await getAdminStats();
+    res.json({ success: true, ...stats });
+  } catch (err) {
+    console.error("Admin stats error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Ee'who dashboard backend running on port ${PORT}`);
-  console.log(`Dashboard: http://localhost:${PORT}/dashboard.html`);
+app.get("/admin", requireAdminAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "admin.html"));
+});
+
+app.listen(PORT, () => {
+  console.log(`Server listening on port ${PORT}`);
 });
