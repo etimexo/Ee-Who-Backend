@@ -57,13 +57,20 @@ app.get("/api/stats", async (req, res) => {
 });
 
 // ADMIN ENDPOINTS (Protected)
-app.get("/api/admin/stats", requireAdminAuth, async (req, res) => {
-  try {
-    const stats = await getAdminStats();
-    res.json({ success: true, ...stats });
-  } catch (err) {
-    console.error("Admin stats error:", err);
-    res.status(500).json({ success: false, error: err.message });
+const fs = require("fs"); // Make sure this is at the top of server.js if it isn't already
+
+app.get("/admin", requireAdminAuth, (req, res) => {
+  // Check if admin.html is in the root folder or inside a /public folder
+  const rootPath = path.join(__dirname, "admin.html");
+  const publicPath = path.join(__dirname, "public", "admin.html");
+
+  if (fs.existsSync(rootPath)) {
+    return res.sendFile(rootPath);
+  } else if (fs.existsSync(publicPath)) {
+    return res.sendFile(publicPath);
+  } else {
+    // If neither exists, this message will display on screen instead of a blank white page
+    res.status(404).send("File error: admin.html was not found in your repository root or public folder.");
   }
 });
 
