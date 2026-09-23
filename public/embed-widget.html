@@ -1,0 +1,143 @@
+<!--
+  EMBED SNIPPET — paste this wherever you can add custom HTML/embed code on
+  ethanaeworld.org (footer, a widget area, etc). It adds a small floating
+  toggle button; clicking it slides open a panel showing the live dashboard
+  in an iframe. Clicking again collapses it. Nothing else on the page is
+  affected — this is fully self-contained.
+
+  Before pasting: replace DASHBOARD_URL below with your real Render URL.
+-->
+<div id="eewho-dash-widget">
+  <button id="eewho-dash-toggle" aria-label="Toggle impact dashboard">
+    📊 Impact Dashboard
+  </button>
+  <div id="eewho-dash-panel">
+    <div id="eewho-dash-panel-header">
+      <span>Live Impact Dashboard</span>
+      <button id="eewho-dash-close" aria-label="Close dashboard">✕</button>
+    </div>
+    <iframe
+      id="eewho-dash-iframe"
+      src=""
+      data-src="https://ee-who-backend.onrender.com/dashboard.html"
+      title="Ee'who Impact Dashboard"
+    ></iframe>
+  </div>
+</div>
+
+<style>
+  #eewho-dash-widget {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 999999;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  #eewho-dash-toggle {
+    background: #059669;
+    color: white;
+    border: none;
+    border-radius: 999px;
+    padding: 12px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  #eewho-dash-toggle:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+  }
+
+  #eewho-dash-panel {
+    display: none;
+    position: fixed;
+    bottom: 80px;
+    right: 20px;
+    width: min(420px, calc(100vw - 40px));
+    height: min(600px, calc(100vh - 140px));
+    background: white;
+    border-radius: 14px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+    overflow: hidden;
+    flex-direction: column;
+  }
+  #eewho-dash-panel.open {
+    display: flex;
+  }
+
+  #eewho-dash-panel-header {
+    background: #059669;
+    color: white;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-weight: 600;
+    font-size: 14px;
+  }
+  #eewho-dash-close {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 16px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 4px;
+  }
+
+  #eewho-dash-iframe {
+    flex: 1;
+    border: none;
+    width: 100%;
+  }
+
+  @media (max-width: 480px) {
+    #eewho-dash-panel {
+      right: 10px;
+      bottom: 76px;
+      width: calc(100vw - 20px);
+    }
+    #eewho-dash-widget {
+      right: 10px;
+      bottom: 10px;
+    }
+  }
+</style>
+
+<script>
+  (function () {
+    var toggleBtn = document.getElementById("eewho-dash-toggle");
+    var closeBtn = document.getElementById("eewho-dash-close");
+    var panel = document.getElementById("eewho-dash-panel");
+    var iframe = document.getElementById("eewho-dash-iframe");
+    var loaded = false;
+
+    function openPanel() {
+      // Lazy-load the iframe src only on first open, so the dashboard
+      // (and its 30s auto-refresh) isn't running in the background before
+      // anyone actually looks at it.
+      if (!loaded) {
+        iframe.src = iframe.getAttribute("data-src");
+        loaded = true;
+      }
+      panel.classList.add("open");
+    }
+
+    function closePanel() {
+      panel.classList.remove("open");
+    }
+
+    toggleBtn.addEventListener("click", function () {
+      if (panel.classList.contains("open")) {
+        closePanel();
+      } else {
+        openPanel();
+      }
+    });
+
+    closeBtn.addEventListener("click", closePanel);
+  })();
+</script>
