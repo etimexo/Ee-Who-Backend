@@ -31,144 +31,216 @@ async function getRows(tabName) {
   }
 }
 
+function isValidDate(val) {
+  if (!val || typeof val !== "string") return false;
+  // Check if it starts with digits and has date characters
+  if (!/^\d{4}/.test(val.trim())) return false;
+  const d = new Date(val);
+  return !isNaN(d.getTime());
+}
+
 function daysAgoISO(days) {
   const d = new Date();
   d.setDate(d.getDate() - days);
   return d.toISOString().slice(0, 10);
 }
 
-function countByField(rows, fieldIndex, fallback = "General") {
+function countByField(items, key, fallback = "General") {
   const counts = {};
-  for (const row of rows) {
-    const key = (row[fieldIndex] || fallback).toString().trim() || fallback;
-    counts[key] = (counts[key] || 0) + 1;
+  for (const item of items) {
+    const val = (item[key] || fallback).toString().trim() || fallback;
+    counts[val] = (counts[val] || 0) + 1;
   }
   return Object.entries(counts)
-    .map(([key, n]) => ({ key, n }))
+    .map(([k, n]) => ({ key: k, n }))
     .sort((a, b) => b.n - a.n);
 }
 
-function countByDayLast30(rows, timestampIndex) {
+function countByDayLast30(items) {
   const cutoff = daysAgoISO(30);
   const counts = {};
-
-  for (const row of rows) {
-    const raw = row[timestampIndex];
-    if (!raw) continue;
-
-    const parsedDate = new Date(raw);
-    if (isNaN(parsedDate.getTime())) continue;
-
-    const day = parsedDate.toISOString().slice(0, 10);
+  for (const item of items) {
+    if (!item.created_at) continue;
+    const d = new Date(item.created_at);
+    if (isNaN(d.getTime())) continue;
+    const day = d.toISOString().slice(0, 10);
     if (day < cutoff) continue;
-
     counts[day] = (counts[day] || 0) + 1;
   }
-
   return Object.entries(counts)
     .map(([day, n]) => ({ day, n }))
     .sort((a, b) => (a.day > b.day ? 1 : -1));
 }
 
-// Normalizes columns if Botpress skipped writing timestamp to Column A
-function normalizeRow(row, defaultCategoryIdx = 4) {
+// 1. Parser for Volunteers
+// Can be: [Timestamp, Name, Email, Phone, Area, Availability]
+// OR:     [Empty, Name, Email, Phone, Area, Availability]
+// OR:     [Name, Email, Phone, Area, Availability]
+function parseVolunteerRow(row) {
   if (!row || row.length === 0) return null;
+  let timestamp, name, email, phone, area, availability;
 
-  const firstVal = (row[0] || "").trim();
-  const parsed = new Date(firstVal);
-  const isDate = !isNaN(parsed.getTime()) && firstVal.length > 5 && /\d/.test(firstVal);
-
-  if (!isDate) {
-    // Columns shifted left by 1
-    return {
-      timestamp: new Date().toISOString(),
-      name: row[0] || "Anonymous",
-      email: row[1] || "",
-      phoneOrCat: row[2] || "",
-      field1: row[3] || "",
-      field2: row[4] || "",
-      raw: row,
-    };
+  if (isValidDate(row[0])) {
+    timestamp = row[0];
+    name = row[1];
+    email = row[2];
+    phone = row[3];
+    area = row[4];
+    availability = row[5];
+  } else if (!row[0] && row[1]) {
+    // Column A is blank
+    timestamp = new Date().toISOString();
+    name = row[1];
+    email = row[2];
+    phone = row[3];
+    area = row[4];
+    availability = row[5];
+  } else {
+    // Column A is Name (shifted left)
+    timestamp = new Date().toISOString();
+    name = row[0];
+    email = row[1];
+    phone = row[2];
+    area = row[3];
+    availability = row[4];
   }
 
+  if (!name && !email) return null;
+
   return {
-    timestamp: row[0],
-    name: row[1] || "Anonymous",
-    email: row[2] || "",
-    phoneOrCat: row[3] || "",
-    field1: row[4] || "",
-    field2: row[5] || "",
-    raw: row,
+    name: name || "Anonymous",
+    email: email || "",
+    phone: phone || "",
+    interest_area: area || "WASH",
+    availability: availability || "",
+    created_at: timestamp,
   };
 }
 
-async function fetchAllRaw() {
+// 2. Parser for DonorInquiries
+// In your sheet: Col A: Name, Col B: Email, Col C: Category, Col D: Amount, Col E: Currency
+function parseDonorRow(row) {
+  if (!row || row.length === 0) return null;
+  let timestamp, name, email, category, amount, currency;
+
+  if (isValidDate(row[0])) {
+    timestamp = row[0];
+    name = row[1];
+    email = row[2];
+    amount = row[3];
+    currency = row[4];
+    category = row[5];
+  } else if (!row[0] && row[1]) {
+    timestamp = new Date().toISOString();
+    name = row[1];
+    email = row[2];
+    category = row[3];
+    amount = row[4];
+    currency = row[5];
+  } else {
+    // Row 0 is Name (as in your actual screenshot!)
+    timestamp = new Date().toISOString();
+    name = row[0];
+    email = row[1];
+    category = row[2];
+    amount = row[3];
+    currency = row[4];
+  }
+
+  if (!name && !email) return null;
+
+  return {
+    name: name || "Anonymous",
+    email: email || "",
+    category: category || "General Support",
+    amount: amount || "",
+    currency: currency || "",
+    created_at: timestamp,
+  };
+}
+
+// 3. Parser for Feedback
+// In your sheet: Col A: Blank, Col B: Name, Col C: Email, Col D: ProgramArea, Col E: Message
+function parseFeedbackRow(row) {
+  if (!row || row.length === 0) return null;
+  let timestamp, name, email, programArea, message;
+
+  if (isValidDate(row[0])) {
+    timestamp = row[0];
+    name = row[1];
+    email = row[2];
+    programArea = row[3];
+    message = row[4];
+  } else if (!row[0] && row[1]) {
+    // Blank Column A (matches your screenshot)
+    timestamp = new Date().toISOString();
+    name = row[1];
+    email = row[2];
+    programArea = row[3];
+    message = row[4];
+  } else {
+    timestamp = new Date().toISOString();
+    name = row[0];
+    email = row[1];
+    programArea = row[2];
+    message = row[3];
+  }
+
+  if (!name && !message) return null;
+
+  return {
+    name: name || "Anonymous",
+    email: email || "",
+    program_area: programArea || "General",
+    message: message || "—",
+    created_at: timestamp,
+  };
+}
+
+async function fetchParsedData() {
   const [rawVolunteers, rawDonors, rawFeedback] = await Promise.all([
     getRows("Volunteers"),
     getRows("DonorInquiries"),
     getRows("Feedback"),
   ]);
 
-  return { rawVolunteers, rawDonors, rawFeedback };
+  const volunteers = rawVolunteers.map(parseVolunteerRow).filter(Boolean);
+  const donors = rawDonors.map(parseDonorRow).filter(Boolean);
+  const feedback = rawFeedback.map(parseFeedbackRow).filter(Boolean);
+
+  return { volunteers, donors, feedback };
 }
 
-// PUBLIC: Only totals, momentum, and aggregates
+// Public API
 async function getPublicStats() {
-  const { rawVolunteers, rawDonors, rawFeedback } = await fetchAllRaw();
+  const { volunteers, donors, feedback } = await fetchParsedData();
 
-  const volunteers = rawVolunteers.map(r => normalizeRow(r)).filter(Boolean);
-  const donors = rawDonors.map(r => normalizeRow(r)).filter(Boolean);
-
-  const volunteersByArea = countByField(volunteers.map(r => [r.field1 || r.phoneOrCat]), 0)
-    .map(r => ({ area: r.key, n: r.n }));
-
-  const donationsByCategory = countByField(donors.map(r => [r.field1 || r.phoneOrCat]), 0)
-    .map(r => ({ category: r.key, n: r.n }));
+  const volunteersByArea = countByField(volunteers, "interest_area").map(r => ({ area: r.key, n: r.n }));
+  const donationsByCategory = countByField(donors, "category").map(r => ({ category: r.key, n: r.n }));
 
   return {
     totals: {
-      volunteers: rawVolunteers.length,
-      donor_inquiries: rawDonors.length,
-      feedback: rawFeedback.length,
+      volunteers: volunteers.length,
+      donor_inquiries: donors.length,
+      feedback: feedback.length,
     },
     volunteers_by_area: volunteersByArea,
     donations_by_category: donationsByCategory,
-    signups_last_30_days: countByDayLast30(volunteers.map(r => [r.timestamp]), 0),
-    donations_last_30_days: countByDayLast30(donors.map(r => [r.timestamp]), 0),
+    signups_last_30_days: countByDayLast30(volunteers),
+    donations_last_30_days: countByDayLast30(donors),
   };
 }
 
-// ADMIN: Full pipeline details including contact info
+// Admin API
 async function getAdminStats() {
-  const publicData = await getPublicStats();
-  const { rawVolunteers, rawDonors, rawFeedback } = await fetchAllRaw();
-
-  const volunteers = rawVolunteers.map(r => normalizeRow(r)).filter(Boolean);
-  const donors = rawDonors.map(r => normalizeRow(r)).filter(Boolean);
-  const feedback = rawFeedback.map(r => normalizeRow(r)).filter(Boolean);
+  const { volunteers, donors, feedback } = await fetchParsedData();
+  const publicStats = await getPublicStats();
 
   return {
-    ...publicData,
-    recent_volunteers: volunteers.slice(-20).reverse().map(r => ({
-      name: r.name,
-      email: r.email,
-      interest_area: r.field1 || r.phoneOrCat || "General",
-      created_at: r.timestamp,
-    })),
-    recent_donor_inquiries: donors.slice(-20).reverse().map(r => ({
-      name: r.name,
-      email: r.email,
-      category: r.phoneOrCat || "General Support",
-      amount: r.field1 || "—",
-      currency: r.field2 || "",
-      created_at: r.timestamp,
-    })),
-    recent_feedback: feedback.slice(-15).reverse().map(r => ({
-      name: r.name,
-      email: r.email,
-      message: r.field1 || r.phoneOrCat || "—",
-      created_at: r.timestamp,
-    })),
+    ...publicStats,
+    recent_volunteers: volunteers.slice(-20).reverse(),
+    recent_donor_inquiries: donors.slice(-20).reverse(),
+    recent_feedback: feedback.slice(-20).reverse(),
   };
 }
 
